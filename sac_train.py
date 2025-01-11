@@ -37,6 +37,7 @@ def initialize_wandb(args):
     """
     return wandb.init(
         project="sac_training",
+        entity="rlma",
         name=f"sac_{args.env}_{args.seed}",
         config=vars(args),
         sync_tensorboard=True,
@@ -54,6 +55,7 @@ def main(args):
         args.seed = np.random.randint(0, 10000)
     set_seed(args.seed)
 
+
     device = "cuda" if th.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
@@ -69,6 +71,8 @@ def main(args):
             has_renderer=args.has_renderer,
             reward_shaping=args.reward_shaping,
             control_freq=args.control_freq,
+            horizon=500,  
+            reward_scale=1.0,
         )
     )
     env.reset(seed=args.seed)
@@ -146,7 +150,7 @@ if __name__ == '__main__':
                         help='Robosuite environment name')
     parser.add_argument('--seed', type=int, default=None,
                         help='Random seed')
-    parser.add_argument('--total_timesteps', type=int, default=2_000_000,  # 优化后
+    parser.add_argument('--total_timesteps', type=int, default=4_000_000,  # 优化后
                         help='Total timesteps for training')
 
     # SAC 参数
