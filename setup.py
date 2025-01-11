@@ -1,6 +1,5 @@
 from setuptools import find_packages, setup
 
-
 setup(
     name="robosuite",
     packages=[package for package in find_packages() if package.startswith("robosuite")],
