@@ -146,11 +146,11 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SAC Training Script')
 
     # 环境参数
-    parser.add_argument('--env', type=str, default="Stack",
+    parser.add_argument('--env', type=str, default="Lift",
                         help='Robosuite environment name')
     parser.add_argument('--seed', type=int, default=None,
                         help='Random seed')
-    parser.add_argument('--total_timesteps', type=int, default=4_000_000,  # 优化后
+    parser.add_argument('--total_timesteps', type=int, default=1e10,  # 优化后
                         help='Total timesteps for training')
 
     # SAC 参数
