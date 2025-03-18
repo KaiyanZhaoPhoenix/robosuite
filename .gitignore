@@ -6,3 +6,5 @@ logs/
 docs/
 
 runs/
+
+robosuite.egg-info/

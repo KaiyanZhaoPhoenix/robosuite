@@ -9,10 +9,7 @@ import wandb
 import json
 
 from typing import Any, Optional, Union
-
 from gymnasium import spaces
-
-from stable_baselines3 import SAC
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback
 from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.logger import configure
@@ -20,11 +17,10 @@ from stable_baselines3.common.logger import configure
 import robosuite as suite
 from robosuite.wrappers import GymWrapper
 
+from miga_sac import MIGA_SAC
+
 
 def set_seed(seed: int):
-    """
-    设置随机种子，确保实验可复现。
-    """
     th.manual_seed(seed)
     random.seed(seed)
     np.random.seed(seed)
@@ -32,36 +28,28 @@ def set_seed(seed: int):
 
 
 def initialize_wandb(args):
-    """
-    初始化 Weights & Biases (WandB) 以记录训练过程中的指标和参数。
-    """
     return wandb.init(
-        project="sac_training",
+        project="miga_training",
         entity="rlma",
-        name=f"sac_{args.env}_{args.seed}",
+        name=f"miga_{args.env}_{args.seed}",
         config=vars(args),
         sync_tensorboard=True,
         save_code=True,
-        notes="Training SAC on Robosuite environment",
-        mode='online' if not args.debug else 'disabled'  # 可以通过命令行参数控制是否启用WandB
+        notes="Training MIGA on Robosuite environment",
+        mode='online' if not args.debug else 'disabled'
     )
 
 
 def main(args):
-    """
-    主训练函数。
-    """
     if args.seed is None:
         args.seed = np.random.randint(0, 10000)
     set_seed(args.seed)
 
-    #cuda
-    device = "cpu" if th.cuda.is_available() else "cpu"
+    device = "cuda" if th.cuda.is_available() else "cpu"
     print(f"Using device: {device}")
 
     run = initialize_wandb(args)
 
-    # 创建Robosuite环境并用GymWrapper包装
     env = GymWrapper(
         suite.make(
             args.env,
@@ -71,16 +59,14 @@ def main(args):
             has_renderer=args.has_renderer,
             reward_shaping=args.reward_shaping,
             control_freq=args.control_freq,
-            horizon=500,  
+            horizon=500,
             reward_scale=1.0,
         )
     )
     env.reset(seed=args.seed)
 
-    # 配置日志记录器
     logger = configure(folder=args.log_folder, format_strings=["stdout", "csv", "tensorboard"])
 
-    # 计算目标熵
     if args.policy == "MultiInputPolicy":
         action_space_dim = get_action_dim(env.action_space)
         target_entropy = -action_space_dim
@@ -88,10 +74,10 @@ def main(args):
         action_space_dim = get_action_dim(env.action_space)
         target_entropy = -action_space_dim
     else:
-        target_entropy = -1.0  # 默认值
+        target_entropy = -1.0
 
-    # 初始化SAC模型
-    model = SAC(
+    # 使用MIGA_SAC替代原来的SAC
+    model = MIGA_SAC(
         policy=args.policy,
         env=env,
         learning_rate=args.learning_rate,
@@ -109,15 +95,16 @@ def main(args):
         verbose=args.verbose,
         device=device,
         seed=args.seed,
+        # MIGA特有参数
+        beta_init=args.beta_init,
+        lambda_decay=args.lambda_decay,
     )
     model.set_logger(logger)
 
-    # 开始训练
     model.learn(total_timesteps=args.total_timesteps)
     
-    # 保存模型
     if args.save_model:
-        model_path = os.path.join("models", f"sac_{args.env}_{args.seed}")
+        model_path = os.path.join("models", f"miga_{args.env}_{args.seed}")
         os.makedirs("models", exist_ok=True)
         model.save(model_path)
         print(f"Model saved to {model_path}")
@@ -127,9 +114,6 @@ def main(args):
 
 
 def get_action_dim(action_space: spaces.Space) -> int:
-    """
-    获取动作空间的维度。
-    """
     if isinstance(action_space, spaces.Box):
         return action_space.shape[0]
     elif isinstance(action_space, spaces.Discrete):
@@ -143,42 +127,46 @@ def get_action_dim(action_space: spaces.Space) -> int:
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='SAC Training Script')
+    parser = argparse.ArgumentParser(description='MIGA Training Script')
 
     # 环境参数
     parser.add_argument('--env', type=str, default="Lift",
                         help='Robosuite environment name')
     parser.add_argument('--seed', type=int, default=None,
                         help='Random seed')
-    parser.add_argument('--total_timesteps', type=int, default=1e10,  # 优化后
+    parser.add_argument('--total_timesteps', type=int, default=1e6,
                         help='Total timesteps for training')
 
-    # SAC 参数
+    # SAC基础参数
     parser.add_argument('--policy', type=str, default="MlpPolicy",
                         choices=["MlpPolicy", "CnnPolicy", "MultiInputPolicy"],
                         help='Policy type')
-    parser.add_argument('--learning_rate', type=float, default=3e-4,  # 优化后
+    parser.add_argument('--learning_rate', type=float, default=3e-4,
                         help='Learning rate')
-    parser.add_argument('--buffer_size', type=float, default=1_000_000,  # 优化后
+    parser.add_argument('--buffer_size', type=float, default=1_000_000,
                         help='Replay buffer size')
-    parser.add_argument('--learning_starts', type=float, default=10_000,  # 优化后
-                        help='Number of steps to collect transitions before learning starts')
-    parser.add_argument('--batch_size', type=int, default=256,  # 优化后
+    parser.add_argument('--learning_starts', type=float, default=10_000,
+                        help='Number of steps before learning starts')
+    parser.add_argument('--batch_size', type=int, default=256,
                         help='Batch size')
     parser.add_argument('--gamma', type=float, default=0.99,
                         help='Discount factor')
-    parser.add_argument('--tau', type=float, default=0.005,  # 优化后
+    parser.add_argument('--tau', type=float, default=0.005,
                         help='Soft update coefficient')
-    parser.add_argument('--ent_coef', type=str, default="auto",  # 优化后
+    parser.add_argument('--ent_coef', type=str, default="auto",
                         help='Entropy coefficient ("auto" or float)')
-    parser.add_argument('--target_entropy', type=str, default="auto",  # 新增
+    parser.add_argument('--target_entropy', type=str, default="auto",
                         help='Target entropy ("auto" or float)')
-    parser.add_argument('--train_freq', type=int, default=1,  # 优化后
+    parser.add_argument('--train_freq', type=int, default=1,
                         help='Number of steps between updates')
-    parser.add_argument('--gradient_steps', type=int, default=1,  # 优化后
+    parser.add_argument('--gradient_steps', type=int, default=1,
                         help='Number of gradient steps after each rollout')
-    parser.add_argument('--target_kl', type=float, default=None,  # 可选参数
-                        help='Target KL divergence (not typically used in SAC)')
+
+    # MIGA特有参数
+    parser.add_argument('--beta_init', type=float, default=0.5,
+                        help='Initial value for beta parameter')
+    parser.add_argument('--lambda_decay', type=float, default=0.001,
+                        help='Decay rate for beta parameter')
 
     # 环境配置
     parser.add_argument('--use_camera_obs', action='store_true',
@@ -199,7 +187,7 @@ if __name__ == '__main__':
                         help='TensorBoard log folder')
     parser.add_argument('--policy_kwargs', type=str, default=None,
                         help='Additional policy keyword arguments as JSON string')
-    parser.add_argument('--verbose', type=int, default=1,  # 优化后
+    parser.add_argument('--verbose', type=int, default=1,
                         help='Verbosity level')
     parser.add_argument('--save_model', action='store_true',
                         help='Save model after training')
@@ -208,7 +196,6 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # 解析 policy_kwargs
     if args.policy_kwargs is not None:
         try:
             args.policy_kwargs = json.loads(args.policy_kwargs)
