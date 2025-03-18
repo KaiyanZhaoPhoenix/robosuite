@@ -46,6 +46,11 @@ def main(args):
     set_seed(args.seed)
 
     device = "cuda" if th.cuda.is_available() else "cpu"
+    
+    # 添加 GPU 选择功能
+    if device == "cuda" and args.gpu_id is not None:
+        device = f"cuda:{args.gpu_id}"
+    
     print(f"Using device: {device}")
 
     run = initialize_wandb(args)
@@ -193,6 +198,10 @@ if __name__ == '__main__':
                         help='Save model after training')
     parser.add_argument('--debug', action='store_true',
                         help='Enable debug mode (disable WandB logging)')
+
+    # 在环境配置部分添加
+    parser.add_argument('--gpu_id', type=int, default=None,
+                        help='指定使用的 GPU ID (如果有多个 GPU)')
 
     args = parser.parse_args()
 
